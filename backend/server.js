@@ -1,76 +1,56 @@
-const express = require("express");
-const mysql = require("mysql2");
-const multer = require("multer");
-const cors = require("cors");
-const path = require("path");
+const express = require('express');
+const cors = require('cors');
+const multer = require('multer');
+const mysql = require('mysql2');
+const path = require('path');
 
 const app = express();
-const port = 3000;
+const PORT = 3000;
 
 app.use(cors());
+app.use(express.json());
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
+// MySQL Connection
 const db = mysql.createConnection({
-  host: "localhost",
-  user: "root",
-  password: "", // replace with your MySQL password
-  database: "fbpost",
+  host: 'localhost',
+  user: 'root',
+  password: '', // Your MySQL password
+  database: 'fbpost'
 });
 
-db.connect((err) => {
+db.connect(err => {
   if (err) throw err;
-  console.log("Connected to MySQL");
+  console.log('MySQL connected');
 });
 
+
+// Multer config
 const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, "./uploads/");
-  },
+  destination: (req, file, cb) => cb(null, 'uploads'),
   filename: (req, file, cb) => {
-    cb(null, Date.now() + path.extname(file.originalname));
-  },
+    const uniqueName = Date.now() + '-' + file.originalname;
+    cb(null, uniqueName);
+  }
+});
+const upload = multer({ storage });
+
+// Routes
+app.get('/api/posts', (req, res) => {
+  db.query('SELECT * FROM posts ORDER BY created_at DESC', (err, results) => {
+    if (err) return res.status(500).json({ error: err });
+    res.json(results);
+  });
 });
 
-const upload = multer({ storage: storage });
-
-// Create table if not exists
-db.query(`
-    CREATE TABLE IF NOT EXISTS posts (
-      id INT AUTO_INCREMENT PRIMARY KEY,
-      image VARCHAR(255),
-      subtext TEXT,
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    );
-  `);
-
-// API endpoint to post an image with subtext
-app.post("/api/posts", upload.single("image"), (req, res) => {
+app.post('/api/posts/upload', upload.single('image'), (req, res) => {
   const { subtext } = req.body;
-  const image = req.file ? req.file.filename : "";
+  const image = req.file ? req.file.filename : null;
 
-  const query = "INSERT INTO posts (image, subtext) VALUES (?, ?)";
-  db.query(query, [image, subtext], (err, result) => {
-    if (err) {
-      res.status(500).json({ message: "Error posting the image." });
-    } else {
-      res.status(200).json({ message: "Post created successfully!" });
-    }
+  db.query('INSERT INTO posts (subtext, image) VALUES (?, ?)', [subtext, image], (err, result) => {
+    if (err) return res.status(500).json({ error: err });
+    res.json({ message: 'Post uploaded successfully', id: result.insertId });
   });
 });
 
-// API endpoint to get all posts
-app.get("/api/posts", (req, res) => {
-  db.query("SELECT * FROM posts ORDER BY created_at DESC", (err, results) => {
-    if (err) {
-      res.status(500).json({ message: "Error retrieving posts." });
-    } else {
-      res.status(200).json(results);
-    }
-  });
-});
-
-app.use("/uploads", express.static("uploads"));
-
-// Start the server
-app.listen(port, () => {
-  console.log(`Server running on http://localhost:${port}`);
-});
+app.listen(PORT, () => console.log(`Server running on http://localhost:${PORT}`));
